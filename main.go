@@ -9,6 +9,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // BloomFilterParams calculates m and k for a given n and p
 func BloomFilterParams(n int, p float64) (m int, k int) {
 	if n <= 0 || p <= 0 || p >= 1 {
@@ -26,66 +33,109 @@ func BloomFilterParams(n int, p float64) (m int, k int) {
 	return
 }
 
+// testConfig holds the configuration for a single Bloom filter test run.
+type testConfig struct {
+	capacity   int
+	errorRate  float64
+	realAmount int
+}
+
+// testBloomFilter runs a single Bloom filter test with the given configuration.
+func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) error {
+	const testSize = 1000
+
+	// Calculate Bloom filter parameters.
+	m, k := BloomFilterParams(config.capacity, config.errorRate)
+	fmt.Printf("Testing n=%d, p=%.4f, realAmount=%d -> m=%d, k=%d\n",
+		config.capacity, config.errorRate, config.realAmount, m, k)
+
+	filterName := fmt.Sprintf("filter_n%d_r%d_p%.4f", config.capacity, config.realAmount, config.errorRate)
+	defer rdb.Del(ctx, filterName) // Ensure cleanup
+
+	// Reserve the filter.
+	if err := rdb.Do(ctx, "BF.RESERVE", filterName, config.errorRate, config.capacity).Err(); err != nil {
+		return fmt.Errorf("failed to reserve bloom filter: %w", err)
+	}
+
+	// Insert items using a pipeline for efficiency.
+	pipe := rdb.Pipeline()
+	insertCount := min(config.capacity, config.realAmount)
+	startInsert := time.Now()
+	for i := 0; i < insertCount; i++ {
+		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("failed to insert items: %w", err)
+	}
+	insertTime := time.Since(startInsert)
+	fmt.Printf("  Inserted %d items in %v\n", insertCount, insertTime)
+
+	// Check for existing and non-existing items.
+	hits, falsePositives := 0, 0
+	startCheck := time.Now()
+
+	// Check for existing items.
+	pipe = rdb.Pipeline()
+	for i := 0; i < insertCount; i++ {
+		pipe.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("item%d", i))
+	}
+	cmds, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing items: %w", err)
+	}
+	for _, cmd := range cmds {
+		if res, err := cmd.(*redis.Cmd).Int(); err == nil && res == 1 {
+			hits++
+		}
+	}
+
+	// Check for non-existing items (potential false positives).
+	pipe = rdb.Pipeline()
+	for i := 0; i < testSize; i++ {
+		pipe.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("fakeitem%d", i))
+	}
+	cmds, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check for non-existing items: %w", err)
+	}
+	for _, cmd := range cmds {
+		if res, err := cmd.(*redis.Cmd).Int(); err == nil && res == 1 {
+			falsePositives++
+		}
+	}
+	checkTime := time.Since(startCheck)
+
+	fmt.Printf("  Hit rate: %d/%d, False positives: %d/%d (%.2f%%)\n",
+		hits, insertCount, falsePositives, testSize, float64(falsePositives)/float64(testSize)*100)
+	fmt.Printf("  Query time: %v\n", checkTime)
+	fmt.Println("----------------------------------------------------")
+
+	return nil
+}
+
+
 func main() {
 	ctx := context.Background()
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		fmt.Printf("Failed to connect to Redis: %v\n", err)
+		return
+	}
 
-	capacities := []int{10, 100, 1000, 10000, 100000, 1000000}
-	realAmounts := []int{10, 100, 1000, 10000, 100000, 1000000, 10000000}
-	errRates := []float64{0.0001, 0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5}
+	configs := []testConfig{
+		{1000, 0.01, 1000},
+		{1000, 0.01, 10000},
+		{100000, 0.001, 100000},
+		{100000, 0.001, 120000},
+		{1000000, 0.0001, 1000000},
+	}
 
-	for _, n := range capacities {
-		for _, realAmount := range realAmounts {
-			for _, p := range errRates {
-				// calculate m and k
-				m, k := BloomFilterParams(n, p)
-				fmt.Printf("For n=%d items and p=%.4f:\n", n, p)
-				fmt.Printf("  Bit array size (m) = %d bits (~%.2f MB)\n", m, float64(m)/8/1024/1024)
-				fmt.Printf("  Number of hash functions (k) = %d\n", k)
-
-				filterName := fmt.Sprintf("filter_n%d_r%d_p%.4f", n, realAmount, p)
-
-				// Reserve filter
-				rdb.Do(ctx, "BF.RESERVE", filterName, p, n)
-
-				// Insert items
-				startInsert := time.Now()
-				for i := 0; i < realAmount && i < n; i++ {
-					rdb.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
-				}
-				insertTime := time.Since(startInsert)
-				fmt.Printf("  Inserted %d items in %v\n", realAmount, insertTime)
-
-				// Test membership for existing and non-existing items
-				hits, falsePositives := 0, 0
-				startCheck := time.Now()
-				for i := 0; i < realAmount; i++ {
-					exists, _ := rdb.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("item%d", i)).Int()
-					if exists == 1 {
-						hits++
-					}
-				}
-
-				// Test some non-existent items for false positive rate
-				testSize := 1000
-				for i := 0; i < testSize; i++ {
-					exists, _ := rdb.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("fakeitem%d", i)).Int()
-					if exists == 1 {
-						falsePositives++
-					}
-				}
-				checkTime := time.Since(startCheck)
-
-				fmt.Printf("  Hit rate: %d/%d, False positives: %d/%d\n", hits, realAmount, falsePositives, testSize)
-				fmt.Printf("  Query time: %v\n", checkTime)
-
-				// Clean up: delete filter
-				rdb.Del(ctx, filterName)
-				fmt.Println("  Filter deleted")
-			}
+	for _, config := range configs {
+		if err := testBloomFilter(ctx, rdb, config); err != nil {
+			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
 		}
 	}
 }
