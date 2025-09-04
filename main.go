@@ -84,7 +84,7 @@ func main() {
 
 				// Clean up: delete filter
 				rdb.Del(ctx, filterName)
-				fmt.Println("  Filter deleted\n")
+				fmt.Println("  Filter deleted")
 			}
 		}
 	}
