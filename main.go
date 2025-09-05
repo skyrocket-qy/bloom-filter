@@ -9,13 +9,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // BloomFilterParams calculates m and k for a given n and p
 func BloomFilterParams(n int, p float64) (m int, k int) {
 	if n <= 0 || p <= 0 || p >= 1 {
@@ -35,9 +28,8 @@ func BloomFilterParams(n int, p float64) (m int, k int) {
 
 // testConfig holds the configuration for a single Bloom filter test run.
 type testConfig struct {
-	capacity   int
-	errorRate  float64
-	realAmount int
+	capacity  int
+	errorRate float64
 }
 
 // testBloomFilter runs a single Bloom filter test with the given configuration.
@@ -46,10 +38,10 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 
 	// Calculate Bloom filter parameters.
 	m, k := BloomFilterParams(config.capacity, config.errorRate)
-	fmt.Printf("Testing n=%d, p=%.4f, realAmount=%d -> m=%d, k=%d\n",
-		config.capacity, config.errorRate, config.realAmount, m, k)
+	fmt.Printf("Testing n=%d, p=%.4f -> m=%d, k=%d\n",
+		config.capacity, config.errorRate, m, k)
 
-	filterName := fmt.Sprintf("filter_n%d_r%d_p%.4f", config.capacity, config.realAmount, config.errorRate)
+	filterName := fmt.Sprintf("filter_n%d_p%.4f", config.capacity, config.errorRate)
 	defer rdb.Del(ctx, filterName) // Ensure cleanup
 
 	// Reserve the filter.
@@ -59,16 +51,16 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 
 	// Insert items using a pipeline for efficiency.
 	pipe := rdb.Pipeline()
-	insertCount := min(config.capacity, config.realAmount)
+	insertCount := config.capacity
 	startInsert := time.Now()
-	for i := 0; i < insertCount; i++ {
+	for i := range insertCount {
 		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("failed to insert items: %w", err)
 	}
 	insertTime := time.Since(startInsert)
-	fmt.Printf("  Inserted %d items in %v\n", insertCount, insertTime)
+	fmt.Printf("Inserted %d items in %v\n", insertCount, insertTime)
 
 	// Check for existing and non-existing items.
 	hits, falsePositives := 0, 0
@@ -113,7 +105,6 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 	return nil
 }
 
-
 func main() {
 	ctx := context.Background()
 
@@ -125,15 +116,16 @@ func main() {
 		return
 	}
 
-	configs := []testConfig{
-		{1000, 0.01, 1000},
-		{1000, 0.01, 10000},
-		{100000, 0.001, 100000},
-		{100000, 0.001, 120000},
-		{1000000, 0.0001, 1000000},
+	ns := []int{100, 1000, 10000, 100000, 1000000}
+	ps := []float64{0.05, 0.03, 0.01, 0.001, 0.0001}
+	testConfigs := []testConfig{}
+	for _, n := range ns {
+		for _, p := range ps {
+			testConfigs = append(testConfigs, testConfig{n, p})
+		}
 	}
 
-	for _, config := range configs {
+	for _, config := range testConfigs {
 		if err := testBloomFilter(ctx, rdb, config); err != nil {
 			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
 		}
