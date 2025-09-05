@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/csv" // New import
 	"fmt"
-	"math"
-	"os"      // New import
+	"math" // New import
+	"os"
 	"strconv" // New import for converting numbers to string
 	"time"
 
@@ -37,7 +37,7 @@ type testConfig struct {
 
 // testBloomFilter runs a single Bloom filter test with the given configuration.
 // It now accepts a csv.Writer to write results.
-func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, writer *csv.Writer) error {
+func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, actualInsertCount int, writer *csv.Writer) error {
 	const testSize = 1000
 
 	// Calculate Bloom filter parameters.
@@ -56,9 +56,9 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 
 	// Insert items using a pipeline for efficiency.
 	pipe := rdb.Pipeline()
-	insertCount := config.capacity
+	insertCount := actualInsertCount
 	startInsert := time.Now()
-	for i := range insertCount {
+	for i := 0; i < insertCount; i++ {
 		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -128,17 +128,50 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		fmt.Printf("Failed to connect to Redis: %v\n", err)
+func TestFpRateVsRealAmount(ctx context.Context, rdb *redis.Client) {
+	// Open CSV file for writing
+	file, err := os.OpenFile("fpRate_realAmount.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
 	}
+	defer file.Close()
 
+	writer := csv.NewWriter(file)
+	defer writer.Flush() // Ensure all buffered writes are flushed before closing
+
+	// Check if file is empty to write header
+	fileInfo, _ := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{
+			"capacity", "errorRate", "m", "k", "insertTime", "checkTime",
+			"hits", "insertCount", "falsePositives", "testSize", "falsePositiveRate",
+		}
+		if err := writer.Write(header); err != nil {
+			fmt.Printf("Failed to write CSV header: %v\n", err)
+			return
+		}
+	}
+
+	// Test for varying realAmount (insertCount) for a fixed n and p
+	fixedN := 10000 // 10e4
+	fixedP := 0.001
+
+	// Define a range of realAmount values to test
+	realAmounts := []int{
+		1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
+		11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
+	} // Example values
+
+	for _, realAmount := range realAmounts {
+		config := testConfig{capacity: fixedN, errorRate: fixedP}
+		if err := testBloomFilter(ctx, rdb, config, realAmount, writer); err != nil {
+			fmt.Printf("Error during test run for varying realAmount (n=%d, p=%.4f, realAmount=%d): %v\n", fixedN, fixedP, realAmount, err)
+		}
+	}
+}
+
+func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 	// Open CSV file for writing
 	file, err := os.OpenFile("bloom_filter_results.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -163,19 +196,34 @@ func main() {
 		}
 	}
 
-	ns := []int{1000000}
+	ns := []int{10e5}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
-		for p := 0.1; p >= 0.00000000001; {
+		for p := 0.1; p >= 0.00001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 10
+			p /= 1.1
 		}
 	}
 
 	for _, config := range testConfigs {
 		// Pass the writer to the testBloomFilter function
-		if err := testBloomFilter(ctx, rdb, config, writer); err != nil {
+		if err := testBloomFilter(ctx, rdb, config, config.capacity, writer); err != nil {
 			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
 		}
 	}
+}
+
+func main() {
+	ctx := context.Background()
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		fmt.Printf("Failed to connect to Redis: %v\n", err)
+		return
+	}
+
+	TestErrRateVsMemUsage(ctx, rdb)
+	TestFpRateVsRealAmount(ctx, rdb)
 }

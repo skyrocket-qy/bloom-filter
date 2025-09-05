@@ -21,4 +21,3 @@ k = number of hash functions
 - Given n = 10e6, plot x = p and y = m(MB)
 - Given n = 10e6, plot x = p and y = checkTime(ms)
 - Given n = 10e4, p = 0.001, plot x = realAmount and y = fpRate
-- 

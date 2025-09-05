@@ -12,14 +12,20 @@ else:
 
         # Convert relevant columns to numeric types
         df['errorRate'] = pd.to_numeric(df['errorRate'])
-        df['m'] = pd.to_numeric(df['m'])
         df['capacity'] = pd.to_numeric(df['capacity'])
 
-        # Choose a fixed capacity (n)
-        # Let's pick the first unique capacity found in the data, or a specific one like 10000
-        fixed_n = 10000000
-        print(f"Plotting memory usage for fixed capacity (n) = {fixed_n}")
+        # Convert checkTime from string (e.g., "123.456ms") to milliseconds (float)
+        def parse_time_to_ms(time_str):
+            if isinstance(time_str, str) and time_str.endswith('ms'):
+                try:
+                    return float(time_str[:-2])
+                except ValueError:
+                    return None
+            return None # Or handle other units if necessary
 
+        df['checkTimeMs'] = df['checkTime'].apply(parse_time_to_ms)
+
+        fixed_n = 10e5
         subset = df[df['capacity'] == fixed_n]
 
         if subset.empty:
@@ -27,18 +33,15 @@ else:
         else:
             print(subset.head())
             plt.figure(figsize=(10, 6))
-            plt.plot(subset['errorRate'], subset['m'] / (8 * 1024 * 1024))
+            plt.plot(subset['errorRate'], subset['checkTimeMs'], marker='o', linestyle='-')
 
             plt.xlabel('Expected Error Rate (p)')
-            plt.ylabel('Total Memory Usage (MB)')
-            plt.title(f'Bloom Filter Memory Usage vs. Expected Error Rate (n={fixed_n})')
+            plt.ylabel('Check Time (ms)')
+            plt.title(f'Bloom Filter Check Time vs. Expected Error Rate (n={fixed_n})')
             plt.grid(True, which="both", ls="--", c='0.7')
             plt.tight_layout()
 
-            # Save the plot
-            plot_filename = f'memory_usage_n{fixed_n}.png'
-            
-            
+            plot_filename = f'check_time_n{fixed_n}.png'
             plt.savefig(plot_filename)
             print(f"Plot saved to {plot_filename}")
 
