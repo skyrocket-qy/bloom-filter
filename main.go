@@ -75,7 +75,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 
 	// Check for existing items.
 	pipe = rdb.Pipeline()
-	for i := 0; i < insertCount; i++ {
+	for i := range insertCount {
 		pipe.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("item%d", i))
 	}
 	cmds, err := pipe.Exec(ctx)
@@ -92,7 +92,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 
 	// Check for non-existing items (potential false positives).
 	pipe = rdb.Pipeline()
-	for i := 0; i < testSize; i++ {
+	for i := range testSize {
 		pipe.Do(ctx, "BF.EXISTS", filterName, fmt.Sprintf("fakeitem%d", i))
 	}
 	cmds, err = pipe.Exec(ctx)
@@ -162,8 +162,7 @@ func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 
 	// Define a range of realAmount values to test
 	realAmounts := []int{
-		1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
-		11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
+		1000, 10000, 50000, 100000, 500000, 1000000,
 	} // Example values
 
 	for _, realAmount := range realAmounts {
@@ -260,7 +259,7 @@ func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
 	for _, n := range ns {
 		for p := 0.1; p >= 0.0000000001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 5
+			p /= 3
 		}
 	}
 
@@ -291,7 +290,7 @@ func main() {
 		return
 	}
 
-	TestErrRateVsMemUsage(ctx, rdb)
+	// TestErrRateVsMemUsage(ctx, rdb)
 	TestRealAmount_fpRate(ctx, rdb)
 	TestErrRateVsCheckTime(ctx, rdb)
 }
