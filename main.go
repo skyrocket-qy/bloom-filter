@@ -166,9 +166,9 @@ func main() {
 	ns := []int{1000000}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
-		for p := 0.1; p >= 0.00001; {
+		for p := 0.1; p >= 0.00000000001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 1.1
+			p /= 10
 		}
 	}
 
