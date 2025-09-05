@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/csv" // New import
 	"fmt"
 	"math"
+	"os"      // New import
+	"strconv" // New import for converting numbers to string
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -33,13 +36,13 @@ type testConfig struct {
 }
 
 // testBloomFilter runs a single Bloom filter test with the given configuration.
-func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) error {
+// It now accepts a csv.Writer to write results.
+func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, writer *csv.Writer) error {
 	const testSize = 1000
 
 	// Calculate Bloom filter parameters.
 	m, k := BloomFilterParams(config.capacity, config.errorRate)
-	fmt.Printf("Testing n=%d, p=%.4f -> m=%d, k=%d\n",
-		config.capacity, config.errorRate, m, k)
+	// fmt.Printf("Testing n=%d, p=%.4f -> m=%d, k=%d\n", config.capacity, config.errorRate, m, k) // Remove this line
 
 	filterName := fmt.Sprintf("filter_n%d_p%.4f", config.capacity, config.errorRate)
 	defer rdb.Del(ctx, filterName) // Ensure cleanup
@@ -62,7 +65,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 		return fmt.Errorf("failed to insert items: %w", err)
 	}
 	insertTime := time.Since(startInsert)
-	fmt.Printf("Inserted %d items in %v\n", insertCount, insertTime)
+	// fmt.Printf("Inserted %d items in %v\n", insertCount, insertTime) // Remove this line
 
 	// Check for existing and non-existing items.
 	hits, falsePositives := 0, 0
@@ -103,10 +106,25 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 	}
 	checkTime := time.Since(startCheck)
 
-	fmt.Printf("  Hit rate: %d/%d, False positives: %d/%d (%.2f%%)\n",
-		hits, insertCount, falsePositives, testSize, float64(falsePositives)/float64(testSize)*100)
-	fmt.Printf("  Query time: %v\n", checkTime)
-	fmt.Println("----------------------------------------------------")
+	falsePositiveRate := float64(falsePositives) / float64(testSize) * 100
+	// Write results to CSV
+	record := []string{
+		strconv.Itoa(config.capacity),
+		fmt.Sprintf("%.4f", config.errorRate),
+		strconv.Itoa(m),
+		strconv.Itoa(k),
+		insertTime.String(),
+		checkTime.String(),
+		strconv.Itoa(hits),
+		strconv.Itoa(insertCount),
+		strconv.Itoa(falsePositives),
+		strconv.Itoa(testSize),
+		fmt.Sprintf("%.2f", falsePositiveRate),
+	}
+	if err := writer.Write(record); err != nil {
+		return fmt.Errorf("failed to write CSV record: %w", err)
+	}
+	writer.Flush() // Ensure data is written immediately
 
 	return nil
 }
@@ -122,17 +140,41 @@ func main() {
 		return
 	}
 
-	ns := []int{100, 1000, 10000, 100000, 1000000}
-	ps := []float64{0.05, 0.03, 0.01, 0.001, 0.0001}
+	// Open CSV file for writing
+	file, err := os.OpenFile("bloom_filter_results.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Failed to open CSV file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush() // Ensure all buffered writes are flushed before closing
+
+	// Check if file is empty to write header
+	fileInfo, _ := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{
+			"capacity", "errorRate", "m", "k", "insertTime", "checkTime",
+			"hits", "insertCount", "falsePositives", "testSize", "falsePositiveRate",
+		}
+		if err := writer.Write(header); err != nil {
+			fmt.Printf("Failed to write CSV header: %v\n", err)
+			return
+		}
+	}
+
+	ns := []int{100000}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
-		for _, p := range ps {
+		for p := 0.0001; p <= 0.5; p *= 2 {
 			testConfigs = append(testConfigs, testConfig{n, p})
 		}
 	}
 
 	for _, config := range testConfigs {
-		if err := testBloomFilter(ctx, rdb, config); err != nil {
+		// Pass the writer to the testBloomFilter function
+		if err := testBloomFilter(ctx, rdb, config, writer); err != nil {
 			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
 		}
 	}
