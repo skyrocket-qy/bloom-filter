@@ -16,5 +16,11 @@ p = target false positive rate
 k = number of hash functions
 
 ## Feature
+### Formula
 - Given n and p, calculate m and k
-- Draw the statistic result to find the sweet point of m and k for given n and p 
+- Given m and p, calculate n and k
+
+### Plot
+- Given n = 10e6, plot x = p and y = m(MB)
+- Given n = 10e6, plot x = p and y = checkTime(ms)
+- 

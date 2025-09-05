@@ -58,14 +58,13 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	pipe := rdb.Pipeline()
 	insertCount := config.capacity
 	startInsert := time.Now()
-	for i := 0; i < insertCount; i++ {
+	for i := range insertCount {
 		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("failed to insert items: %w", err)
 	}
 	insertTime := time.Since(startInsert)
-	// fmt.Printf("Inserted %d items in %v\n", insertCount, insertTime) // Remove this line
 
 	// Check for existing and non-existing items.
 	hits, falsePositives := 0, 0
@@ -110,8 +109,8 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	// Write results to CSV
 	record := []string{
 		strconv.Itoa(config.capacity),
-		fmt.Sprintf("%.4f", config.errorRate),
-		strconv.Itoa(m),
+		fmt.Sprintf("%f", config.errorRate),
+		strconv.Itoa(m / 1024 / 1024),
 		strconv.Itoa(k),
 		insertTime.String(),
 		checkTime.String(),
@@ -141,7 +140,7 @@ func main() {
 	}
 
 	// Open CSV file for writing
-	file, err := os.OpenFile("bloom_filter_results.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile("bloom_filter_results.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
@@ -164,11 +163,12 @@ func main() {
 		}
 	}
 
-	ns := []int{100000}
+	ns := []int{1000000}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
-		for p := 0.0001; p <= 0.5; p *= 2 {
+		for p := 0.1; p >= 0.00001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
+			p /= 1.1
 		}
 	}
 

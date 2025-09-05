@@ -25,22 +25,22 @@ else:
         if subset.empty:
             print(f"No data found for capacity (n) = {fixed_n}. Please check the CSV file or choose a different 'n'.")
         else:
+            print(subset.head())
             plt.figure(figsize=(10, 6))
-            plt.plot(subset['errorRate'], subset['m'], marker='o', linestyle='-')
+            plt.plot(subset['errorRate'], subset['m'])
 
-            plt.xscale('log') # Error rates are often logarithmic
             plt.xlabel('Expected Error Rate (p)')
-            plt.ylabel('Total Memory Usage (m - number of bits)')
+            plt.ylabel('Total Memory Usage (MB)')
             plt.title(f'Bloom Filter Memory Usage vs. Expected Error Rate (n={fixed_n})')
             plt.grid(True, which="both", ls="--", c='0.7')
             plt.tight_layout()
 
             # Save the plot
-            plot_filename = f'bloom_filter_memory_usage_n{fixed_n}.png'
+            plot_filename = f'memory_usage_n{fixed_n}.png'
+            # plt.yticks(range(int(subset['m'].min()), int(subset['m'].max()) + 1, 100000))
+            plt.gca().invert_xaxis()
             plt.savefig(plot_filename)
             print(f"Plot saved to {plot_filename}")
-
-            plt.show()
 
     except Exception as e:
         print(f"An error occurred while processing the CSV or plotting: {e}")
