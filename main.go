@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/csv" // New import
+	"flag"
 	"fmt"
 	"log"
 	"math" // New import
 	"os"
-	"os/exec"
 	"strconv" // New import for converting numbers to string
 	"time"
 
@@ -134,6 +134,9 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 }
 
 func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
+	if _, err := os.Stat("out"); os.IsNotExist(err) {
+		os.Mkdir("out", 0755)
+	}
 	// Open CSV file for writing
 	file, err := os.OpenFile("out/realAmount_fpRate.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -174,16 +177,13 @@ func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "realAmount_fpRate.py")
-	err = cmd.Run()
-	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
-	}
-
-	log.Println("Python script executed successfully.")
+	log.Println("CSV data for realAmount_fpRate generated successfully.")
 }
 
 func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
+	if _, err := os.Stat("out"); os.IsNotExist(err) {
+		os.Mkdir("out", 0755)
+	}
 	file, err := os.OpenFile("out/errRate_memUsage.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
@@ -223,16 +223,13 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "errRate_memUsage.py")
-	err = cmd.Run()
-	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
-	}
-
-	log.Println("Python script executed successfully.")
+	log.Println("CSV data for errRate_memUsage generated successfully.")
 }
 
 func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
+	if _, err := os.Stat("out"); os.IsNotExist(err) {
+		os.Mkdir("out", 0755)
+	}
 	file, err := os.OpenFile("out/errRate_checkTime.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
@@ -272,18 +269,14 @@ func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "errRate_checkTime.py")
-	err = cmd.Run()
-	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
-	}
-
-	log.Println("Python script executed successfully.")
+	log.Println("CSV data for errRate_checkTime generated successfully.")
 }
 
 func main() {
-	ctx := context.Background()
+	test := flag.String("test", "all", "Specify which test to run: mem, fp, time, all")
+	flag.Parse()
 
+	ctx := context.Background()
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
@@ -292,7 +285,19 @@ func main() {
 		return
 	}
 
-	TestErrRateVsMemUsage(ctx, rdb)
-	TestRealAmount_fpRate(ctx, rdb)
-	TestErrRateVsCheckTime(ctx, rdb)
+	switch *test {
+	case "mem":
+		TestErrRateVsMemUsage(ctx, rdb)
+	case "fp":
+		TestRealAmount_fpRate(ctx, rdb)
+	case "time":
+		TestErrRateVsCheckTime(ctx, rdb)
+	case "all":
+		TestErrRateVsMemUsage(ctx, rdb)
+		TestRealAmount_fpRate(ctx, rdb)
+		TestErrRateVsCheckTime(ctx, rdb)
+	default:
+		fmt.Println("Invalid test specified. Use 'mem', 'fp', 'time', or 'all'.")
+		os.Exit(1)
+	}
 }
