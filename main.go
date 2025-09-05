@@ -44,6 +44,8 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 	filterName := fmt.Sprintf("filter_n%d_p%.4f", config.capacity, config.errorRate)
 	defer rdb.Del(ctx, filterName) // Ensure cleanup
 
+	rdb.Del(ctx, filterName) // Ensure the filter doesn't exist
+
 	// Reserve the filter.
 	if err := rdb.Do(ctx, "BF.RESERVE", filterName, config.errorRate, config.capacity).Err(); err != nil {
 		return fmt.Errorf("failed to reserve bloom filter: %w", err)
@@ -53,7 +55,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 	pipe := rdb.Pipeline()
 	insertCount := config.capacity
 	startInsert := time.Now()
-	for i := range insertCount {
+	for i := 0; i < insertCount; i++ {
 		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -76,8 +78,10 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 		return fmt.Errorf("failed to check for existing items: %w", err)
 	}
 	for _, cmd := range cmds {
-		if res, err := cmd.(*redis.Cmd).Int(); err == nil && res == 1 {
-			hits++
+		if res, err := cmd.(*redis.Cmd).Result(); err == nil {
+			if val, ok := res.(bool); ok && val {
+				hits++
+			}
 		}
 	}
 
@@ -91,8 +95,10 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig) 
 		return fmt.Errorf("failed to check for non-existing items: %w", err)
 	}
 	for _, cmd := range cmds {
-		if res, err := cmd.(*redis.Cmd).Int(); err == nil && res == 1 {
-			falsePositives++
+		if res, err := cmd.(*redis.Cmd).Result(); err == nil {
+			if val, ok := res.(bool); ok && val {
+				falsePositives++
+			}
 		}
 	}
 	checkTime := time.Since(startCheck)
