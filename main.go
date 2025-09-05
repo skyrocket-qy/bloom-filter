@@ -23,10 +23,12 @@ func BloomFilterParams(n int, p float64) (m int, k int) {
 	// m = -(n * ln(p)) / (ln 2)^2
 	mFloat := -float64(n) * math.Log(p) / (math.Ln2 * math.Ln2)
 	m = int(math.Ceil(mFloat)) // round up to next integer
+	log.Println("m:", m/1024/1024, "MB")
 
 	// k = (m/n) * ln 2
 	kFloat := (float64(m) / float64(n)) * math.Ln2
 	k = int(math.Ceil(kFloat)) // round up to next integer
+	log.Println("k:", k)
 
 	return
 }
@@ -205,7 +207,7 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	ns := []int{10e4}
+	ns := []int{10e5}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
 		for p := 0.1; p >= 0.00001; {
@@ -259,7 +261,7 @@ func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
 	for _, n := range ns {
 		for p := 0.1; p >= 0.0000000001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 3
+			p /= 1.05
 		}
 	}
 
@@ -290,7 +292,7 @@ func main() {
 		return
 	}
 
-	// TestErrRateVsMemUsage(ctx, rdb)
+	TestErrRateVsMemUsage(ctx, rdb)
 	TestRealAmount_fpRate(ctx, rdb)
 	TestErrRateVsCheckTime(ctx, rdb)
 }
