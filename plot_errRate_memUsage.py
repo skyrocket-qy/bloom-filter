@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-file_path = 'bloom_filter_results.csv'
+file_path = 'errRate_memUsage.csv'
 
 if not os.path.exists(file_path):
     print(f"Error: The file '{file_path}' was not found.")
@@ -15,28 +15,23 @@ else:
         df['m'] = pd.to_numeric(df['m'])
         df['capacity'] = pd.to_numeric(df['capacity'])
 
-        # Choose a fixed capacity (n)
-        # Let's pick the first unique capacity found in the data, or a specific one like 10000
-        fixed_n = 10000000
-        print(f"Plotting memory usage for fixed capacity (n) = {fixed_n}")
-
-        subset = df[df['capacity'] == fixed_n]
+        subset = df
 
         if subset.empty:
-            print(f"No data found for capacity (n) = {fixed_n}. Please check the CSV file or choose a different 'n'.")
+            print(f"No data found for capacity. Please check the CSV file or choose a different 'n'.")
         else:
             print(subset.head())
             plt.figure(figsize=(10, 6))
             plt.plot(subset['errorRate'], subset['m'] / (8 * 1024 * 1024))
-
+            plt.gca().invert_xaxis()
             plt.xlabel('Expected Error Rate (p)')
-            plt.ylabel('Total Memory Usage (MB)')
-            plt.title(f'Bloom Filter Memory Usage vs. Expected Error Rate (n={fixed_n})')
+            plt.ylabel('Total Memory Usage (KB)')
+            plt.title(f'Bloom Filter Memory Usage vs. Expected Error Rate')
             plt.grid(True, which="both", ls="--", c='0.7')
             plt.tight_layout()
 
             # Save the plot
-            plot_filename = f'memory_usage_n{fixed_n}.png'
+            plot_filename = f'errRate_memUsage.png'
             
             
             plt.savefig(plot_filename)

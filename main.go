@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/csv" // New import
 	"fmt"
+	"log"
 	"math" // New import
 	"os"
+	"os/exec"
 	"strconv" // New import for converting numbers to string
 	"time"
 
@@ -58,7 +60,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	pipe := rdb.Pipeline()
 	insertCount := actualInsertCount
 	startInsert := time.Now()
-	for i := 0; i < insertCount; i++ {
+	for i := range insertCount {
 		pipe.Do(ctx, "BF.ADD", filterName, fmt.Sprintf("item%d", i))
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -105,12 +107,12 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	}
 	checkTime := time.Since(startCheck)
 
-	falsePositiveRate := float64(falsePositives) / float64(testSize) * 100
+	falsePositiveRate := float64(falsePositives) / float64(testSize)
 	// Write results to CSV
 	record := []string{
 		strconv.Itoa(config.capacity),
-		fmt.Sprintf("%f", config.errorRate),
-		strconv.Itoa(m / 1024 / 1024),
+		fmt.Sprintf("%.4f", config.errorRate),
+		fmt.Sprintf("%.4f", float64(m)/1024),
 		strconv.Itoa(k),
 		insertTime.String(),
 		checkTime.String(),
@@ -118,7 +120,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 		strconv.Itoa(insertCount),
 		strconv.Itoa(falsePositives),
 		strconv.Itoa(testSize),
-		fmt.Sprintf("%.2f", falsePositiveRate),
+		fmt.Sprintf("%.4f", falsePositiveRate),
 	}
 	if err := writer.Write(record); err != nil {
 		return fmt.Errorf("failed to write CSV record: %w", err)
@@ -128,7 +130,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	return nil
 }
 
-func TestFpRateVsRealAmount(ctx context.Context, rdb *redis.Client) {
+func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 	// Open CSV file for writing
 	file, err := os.OpenFile("fpRate_realAmount.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -154,7 +156,7 @@ func TestFpRateVsRealAmount(ctx context.Context, rdb *redis.Client) {
 	}
 
 	// Test for varying realAmount (insertCount) for a fixed n and p
-	fixedN := 10000 // 10e4
+	fixedN := 10000
 	fixedP := 0.001
 
 	// Define a range of realAmount values to test
@@ -169,11 +171,18 @@ func TestFpRateVsRealAmount(ctx context.Context, rdb *redis.Client) {
 			fmt.Printf("Error during test run for varying realAmount (n=%d, p=%.4f, realAmount=%d): %v\n", fixedN, fixedP, realAmount, err)
 		}
 	}
+
+	cmd := exec.Command("python3", "plot_realAmount_fpRate.py")
+	err = cmd.Run()
+	if err != nil {
+		log.Fatalf("cmd.Run() failed with %s\n", err)
+	}
+
+	log.Println("Python script executed successfully.")
 }
 
 func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
-	// Open CSV file for writing
-	file, err := os.OpenFile("bloom_filter_results.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile("errRate_memUsage.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
@@ -196,12 +205,12 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	ns := []int{10e5}
+	ns := []int{10e4}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
 		for p := 0.1; p >= 0.00001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 1.1
+			p /= 1.05
 		}
 	}
 
@@ -211,6 +220,63 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
 		}
 	}
+
+	cmd := exec.Command("python3", "plot_errRate_memUsage.py")
+	err = cmd.Run()
+	if err != nil {
+		log.Fatalf("cmd.Run() failed with %s\n", err)
+	}
+
+	log.Println("Python script executed successfully.")
+}
+
+func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
+	file, err := os.OpenFile("errRate_checkTime.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Printf("Failed to open CSV file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush() // Ensure all buffered writes are flushed before closing
+
+	// Check if file is empty to write header
+	fileInfo, _ := file.Stat()
+	if fileInfo.Size() == 0 {
+		header := []string{
+			"capacity", "errorRate", "m", "k", "insertTime", "checkTime",
+			"hits", "insertCount", "falsePositives", "testSize", "falsePositiveRate",
+		}
+		if err := writer.Write(header); err != nil {
+			fmt.Printf("Failed to write CSV header: %v\n", err)
+			return
+		}
+	}
+
+	ns := []int{10e4}
+	testConfigs := []testConfig{}
+	for _, n := range ns {
+		for p := 0.1; p >= 0.00000001; {
+			testConfigs = append(testConfigs, testConfig{n, p})
+			p /= 10
+		}
+	}
+
+	for _, config := range testConfigs {
+		// Pass the writer to the testBloomFilter function
+		if err := testBloomFilter(ctx, rdb, config, config.capacity, writer); err != nil {
+			fmt.Printf("Error during test run for config %+v: %v\n", config, err)
+		}
+	}
+
+	cmd := exec.Command("python3", "plot_errRate_checkTime.py")
+	err = cmd.Run()
+	if err != nil {
+		log.Fatalf("cmd.Run() failed with %s\n", err)
+	}
+
+	log.Println("Python script executed successfully.")
 }
 
 func main() {
@@ -225,5 +291,6 @@ func main() {
 	}
 
 	TestErrRateVsMemUsage(ctx, rdb)
-	TestFpRateVsRealAmount(ctx, rdb)
+	TestRealAmount_fpRate(ctx, rdb)
+	TestErrRateVsCheckTime(ctx, rdb)
 }
