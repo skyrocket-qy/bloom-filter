@@ -39,7 +39,8 @@ type testConfig struct {
 
 // testBloomFilter runs a single Bloom filter test with the given configuration.
 // It now accepts a csv.Writer to write results.
-func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, actualInsertCount int, writer *csv.Writer) error {
+func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, actualInsertCount int,
+	writer *csv.Writer) error {
 	const testSize = 1000
 
 	// Calculate Bloom filter parameters.
@@ -111,7 +112,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	// Write results to CSV
 	record := []string{
 		strconv.Itoa(config.capacity),
-		fmt.Sprintf("%.9f", config.errorRate),
+		fmt.Sprintf("%.12f", config.errorRate),
 		fmt.Sprintf("%.4f", float64(m)/1024),
 		strconv.Itoa(k),
 		insertTime.String(),
@@ -132,7 +133,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 
 func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 	// Open CSV file for writing
-	file, err := os.OpenFile("realAmount_fpRate.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile("out/realAmount_fpRate.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
@@ -172,7 +173,7 @@ func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "plot_realAmount_fpRate.py")
+	cmd := exec.Command("python3", "realAmount_fpRate.py")
 	err = cmd.Run()
 	if err != nil {
 		log.Fatalf("cmd.Run() failed with %s\n", err)
@@ -182,7 +183,7 @@ func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 }
 
 func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
-	file, err := os.OpenFile("errRate_memUsage.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile("out/errRate_memUsage.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
@@ -221,7 +222,7 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "plot_errRate_memUsage.py")
+	cmd := exec.Command("python3", "errRate_memUsage.py")
 	err = cmd.Run()
 	if err != nil {
 		log.Fatalf("cmd.Run() failed with %s\n", err)
@@ -231,7 +232,7 @@ func TestErrRateVsMemUsage(ctx context.Context, rdb *redis.Client) {
 }
 
 func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
-	file, err := os.OpenFile("errRate_checkTime.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile("out/errRate_checkTime.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return
@@ -257,9 +258,9 @@ func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
 	ns := []int{10e4}
 	testConfigs := []testConfig{}
 	for _, n := range ns {
-		for p := 0.1; p >= 0.00000001; {
+		for p := 0.1; p >= 0.0000000001; {
 			testConfigs = append(testConfigs, testConfig{n, p})
-			p /= 10
+			p /= 5
 		}
 	}
 
@@ -270,7 +271,7 @@ func TestErrRateVsCheckTime(ctx context.Context, rdb *redis.Client) {
 		}
 	}
 
-	cmd := exec.Command("python3", "plot_errRate_checkTime.py")
+	cmd := exec.Command("python3", "errRate_checkTime.py")
 	err = cmd.Run()
 	if err != nil {
 		log.Fatalf("cmd.Run() failed with %s\n", err)

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-file_path = 'realAmount_fpRate.csv'
+file_path = 'out/realAmount_fpRate.csv'
 
 if not os.path.exists(file_path):
     print(f"Error: The file '{file_path}' was not found.")
@@ -31,7 +31,7 @@ else:
             plt.grid(True, which="both", ls="--", c='0.7')
             plt.tight_layout()
 
-            plot_filename = f'realAmount_fpRate.png'
+            plot_filename = f'out/realAmount_fpRate.png'
             plt.savefig(plot_filename)
             print(f"Plot saved to {plot_filename}")
 

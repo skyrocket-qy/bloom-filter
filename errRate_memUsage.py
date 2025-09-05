@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-file_path = 'errRate_memUsage.csv'
+file_path = 'out/errRate_memUsage.csv'
 
 if not os.path.exists(file_path):
     print(f"Error: The file '{file_path}' was not found.")
@@ -31,7 +31,7 @@ else:
             plt.tight_layout()
 
             # Save the plot
-            plot_filename = f'errRate_memUsage.png'
+            plot_filename = f'out/errRate_memUsage.png'
             
             
             plt.savefig(plot_filename)
