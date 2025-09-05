@@ -111,7 +111,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 	// Write results to CSV
 	record := []string{
 		strconv.Itoa(config.capacity),
-		fmt.Sprintf("%.4f", config.errorRate),
+		fmt.Sprintf("%.9f", config.errorRate),
 		fmt.Sprintf("%.4f", float64(m)/1024),
 		strconv.Itoa(k),
 		insertTime.String(),
@@ -132,7 +132,7 @@ func testBloomFilter(ctx context.Context, rdb *redis.Client, config testConfig, 
 
 func TestRealAmount_fpRate(ctx context.Context, rdb *redis.Client) {
 	// Open CSV file for writing
-	file, err := os.OpenFile("fpRate_realAmount.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile("realAmount_fpRate.csv", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("Failed to open CSV file: %v\n", err)
 		return

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-file_path = 'fpRate_realAmount.csv'
+file_path = 'realAmount_fpRate.csv'
 
 if not os.path.exists(file_path):
     print(f"Error: The file '{file_path}' was not found.")
